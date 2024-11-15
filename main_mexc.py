@@ -55,7 +55,7 @@ def on_message(ws, message):
 
             # Insert the data into PostgreSQL
             insert_query = sql.SQL("""
-                INSERT INTO price_data (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades, timestamp)
+                INSERT INTO price_data_v2 (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades, timestamp)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW());
             """)
             cursor.execute(insert_query, (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades))

@@ -9,6 +9,10 @@ from psycopg2 import sql
 import threading
 import time
 from one_min_strategy import run_strategy
+from trade_manager import TradeManager
+
+# Instantiate the TradeManager
+trade_manager = TradeManager()
 
 
 # Configure logging
@@ -32,7 +36,6 @@ def create_db_connection():
         logging.error(db_err)
         raise  # Stop execution if DB connection fails
 
-
 # Create initial connection
 conn, cursor = create_db_connection()
 
@@ -45,6 +48,18 @@ def on_message(ws, message):
         if 'd' in data and 'k' in data['d']:
             kline = data['d']['k']
             symbol = data['s']
+            live_price = float(kline['c'])  # Convert close price to float
+            current_time = datetime.now()
+
+            # Check for trades that meet the exit condition
+            # Check if there are active trades before running exit logic
+            if trade_manager.has_active_trades():
+                exited_trades = trade_manager.check_exit_conditions(live_price)
+                for trade in exited_trades:
+                    trade_manager.log_trade_exit(trade["trade_id"], current_time, trade["target_price"])
+                    logging.info(f"Trade {trade['trade_id']} exited at price {trade['target_price']}")
+
+
             interval = kline['i']
             open_price = float(kline['o'])
             close_price = float(kline['c'])
@@ -53,9 +68,11 @@ def on_message(ws, message):
             volume = float(kline['v'])
             number_of_trades = kline.get('n', 0)  # Ensure it defaults to 0 if missing
 
+            # Create initial connection
+            conn, cursor = create_db_connection()
             # Insert the data into PostgreSQL
             insert_query = sql.SQL("""
-                INSERT INTO price_data_v2 (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades, timestamp)
+                INSERT INTO price_data_v10 (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades, timestamp)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW());
             """)
             cursor.execute(insert_query, (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades))
@@ -64,7 +81,11 @@ def on_message(ws, message):
     except Exception as e:
         logging.error("Error processing WebSocket message")
         logging.error(traceback.format_exc())
-        close_db_connection()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # Function to close DB connection
@@ -123,7 +144,7 @@ def start_websocket():
 
 
 # Function to wait until the next 1-minute interval and run the strategy
-def run_strategy_every_min():
+def run_strategy_every_min(trade_manager):
     while True:
         now = datetime.now()
         next_interval = (now + timedelta(minutes=1 - (now.minute % 1))).replace(second=0, microsecond=0)
@@ -134,7 +155,7 @@ def run_strategy_every_min():
         time.sleep(time_to_wait)
 
         # Run the strategy once the interval is reached
-        run_strategy()
+        run_strategy(trade_manager)
 
 
 # Start the WebSocket with the given symbol and interval
@@ -143,4 +164,4 @@ if __name__ == "__main__":
     websocket_thread = threading.Thread(target=start_websocket, daemon=True)
     websocket_thread.start()
 
-    run_strategy_every_min()
+    run_strategy_every_min(trade_manager)

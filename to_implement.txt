@@ -1,0 +1,147 @@
+ok, perfect. It seems all correct. But now thinking, if there's an error and the process stops or whatever, we would lose the active trades, because it is in the memory correct?
+Having this into account it's better to save it into the DB. But well, there also can be errors with the DB connection. So we have to control really well the process, to assure there's no active trade if the process stops or maybe close all of them? Or even save them into the DB and when coming back getting all the active trades from there and try to close them
+ChatGPT said:
+
+ChatGPT
+You're absolutely correct. If the process stops unexpectedly, having active trades stored only in memory means they will be lost. A robust approach to handle this would be to persist active trades in the database and recover them upon restarting the process. Let’s outline the solution and implementation.
+
+Key Considerations
+Persist Active Trades to the Database:
+Save active trades to a dedicated table (active_trades) in the database.
+Ensure this table reflects the current state of trades (e.g., trade ID, entry time, entry price, target price).
+Recover Active Trades on Restart:
+On process startup, fetch active trades from the database and load them into TradeManager.
+Handle Process Shutdown:
+Gracefully close all trades or mark them as needing review in the database.
+Optionally log unclosed trades for further analysis.
+Fail-Safe Mechanism:
+Validate the integrity of the active trades data on startup (e.g., check timestamps, prevent duplicates).
+Implementation Steps
+1. Add Active Trades Table to the Database
+
+Create a new table, active_trades, to store active trades persistently.
+
+CREATE TABLE active_trades (
+    trade_id SERIAL PRIMARY KEY,
+    entry_time TIMESTAMP NOT NULL,
+    entry_price DECIMAL(18, 8) NOT NULL,
+    target_price DECIMAL(18, 8) NOT NULL,
+    status VARCHAR(20) DEFAULT 'active' -- Can also use 'closed' for manual review
+);
+2. Update TradeManager to Handle Database Persistence
+
+class TradeManager:
+    def __init__(self, db_connection):
+        self.db_connection = db_connection
+        self.active_trades = []
+        self.completed_trades = []
+        self.logged_duplicates = set()
+
+        # Load active trades from the database on initialization
+        self.load_active_trades()
+
+    def load_active_trades(self):
+        """Load active trades from the database into memory."""
+        try:
+            cursor = self.db_connection.cursor()
+            query = "SELECT trade_id, entry_time, entry_price, target_price FROM active_trades WHERE status = 'active';"
+            cursor.execute(query)
+            trades = cursor.fetchall()
+            for trade in trades:
+                self.active_trades.append({
+                    "trade_id": trade[0],
+                    "entry_time": trade[1],
+                    "entry_price": trade[2],
+                    "target_price": trade[3],
+                })
+            logging.info(f"Loaded {len(self.active_trades)} active trades from the database.")
+        except Exception as e:
+            logging.error("Error loading active trades from the database.")
+            logging.error(traceback.format_exc())
+
+    def save_trade(self, trade):
+        """Persist a new trade to the database."""
+        try:
+            cursor = self.db_connection.cursor()
+            insert_query = """
+                INSERT INTO active_trades (trade_id, entry_time, entry_price, target_price, status)
+                VALUES (%s, %s, %s, %s, 'active');
+            """
+            cursor.execute(insert_query, (trade["trade_id"], trade["entry_time"], trade["entry_price"], trade["target_price"]))
+            self.db_connection.commit()
+            logging.info(f"Trade {trade['trade_id']} saved to the database.")
+        except Exception as e:
+            logging.error("Error saving trade to the database.")
+            logging.error(traceback.format_exc())
+
+    def mark_trade_closed(self, trade_id):
+        """Mark a trade as closed in the database."""
+        try:
+            cursor = self.db_connection.cursor()
+            update_query = "UPDATE active_trades SET status = 'closed' WHERE trade_id = %s;"
+            cursor.execute(update_query, (trade_id,))
+            self.db_connection.commit()
+            logging.info(f"Trade {trade_id} marked as closed in the database.")
+        except Exception as e:
+            logging.error("Error marking trade as closed in the database.")
+            logging.error(traceback.format_exc())
+
+    def add_trade(self, trade_id, entry_time, entry_price, target_price):
+        trade = {
+            "trade_id": trade_id,
+            "entry_time": entry_time,
+            "entry_price": entry_price,
+            "target_price": target_price,
+        }
+        self.active_trades.append(trade)
+        self.save_trade(trade)
+
+    def remove_trade(self, trade_id):
+        for trade in self.active_trades:
+            if trade["trade_id"] == trade_id:
+                self.completed_trades.append(trade)
+                self.active_trades.remove(trade)
+                self.mark_trade_closed(trade_id)
+                return trade
+        return None
+
+    def check_exit_conditions(self, current_price):
+        exited_trades = []
+        for trade in self.active_trades[:]:
+            if current_price >= trade["target_price"]:
+                self.remove_trade(trade["trade_id"])
+                exited_trades.append(trade)
+        return exited_trades
+3. Recover Active Trades on Process Restart
+
+Update the initialization in main_mexc.py to load trades from the database.
+
+# Initialize TradeManager with database connection
+trade_manager = TradeManager(conn)
+
+# Example recovery logging
+if trade_manager.active_trades:
+    logging.info(f"Recovered {len(trade_manager.active_trades)} active trades on restart.")
+else:
+    logging.info("No active trades found on restart.")
+4. Graceful Shutdown
+
+Handle cleanup on process shutdown by marking trades as needing review or logging their state.
+
+import signal
+
+def graceful_exit(signum, frame):
+    logging.info("Graceful shutdown initiated.")
+    for trade in trade_manager.active_trades:
+        logging.warning(f"Unclosed trade on shutdown: {trade}")
+    close_db_connection()
+    exit(0)
+
+signal.signal(signal.SIGINT, graceful_exit)
+signal.signal(signal.SIGTERM, graceful_exit)
+Benefits of This Approach
+Resiliency: Active trades persist across process restarts.
+Data Integrity: Trades are marked as active or closed to avoid confusion.
+Improved Debugging: Logs provide clear information about unclosed trades.
+Future Compatibility: Works well with potential migration to Rust or distributed systems.
+This ensures your strategy is robust and reliable, even in the face of process or connection interruptions.

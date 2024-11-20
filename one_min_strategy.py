@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 import traceback
 
+
 # Configure logging
 logging.basicConfig(filename='strategy_mexc_log.txt', level=logging.INFO, format='%(asctime)s - %(message)s')
 
@@ -14,15 +15,8 @@ TREND_CONFIRMATION_PERIOD = 3  # Number of candles for trend confirmation
 GAIN_TARGET_PERCENT = Decimal('0.0001')  # 0.01% gain
 MAX_SIMULTANEOUS_TRADES = 4  # Maximum number of open trades at the same time
 
-# Global variables for tracking trades
-active_trades = []
-completed_trades = []  # List to store completed trades with entry time and entry price  # List to store active trades with trade_id, entry price, and target price
-
-# Add this global variable to track duplicates we have already logged
-logged_duplicates = set()
-
 # Database connection function
-def db_connect():
+def create_db_connection():
     try:
         conn = psycopg2.connect(
             database="spot_strategy",
@@ -31,7 +25,8 @@ def db_connect():
             host="127.0.0.1",
             port="5432"
         )
-        return conn
+        cursor = conn.cursor()
+        return conn, cursor
     except psycopg2.Error as db_err:
         logging.error("Failed to connect to the database")
         logging.error(db_err)
@@ -39,11 +34,10 @@ def db_connect():
 
 # Function to get and form all available 1-minute candles from stored data
 def get_all_candles():
-    conn = db_connect()
-    cursor = conn.cursor()
+    conn, cursor = create_db_connection()
     query = """
         SELECT timestamp, open_price, high_price, low_price, close_price, volume
-        FROM price_data_v2
+        FROM price_data_v10
         ORDER BY timestamp;
     """
     cursor.execute(query)
@@ -90,6 +84,7 @@ def get_all_candles():
 # Function to check if the pattern is met
 def check_pattern(candle_data):
     if len(candle_data) < LOOKBACK_PERIOD + TREND_CONFIRMATION_PERIOD:
+        logging.info(f"Insufficient data: {len(candle_data)} candles available, but {LOOKBACK_PERIOD + TREND_CONFIRMATION_PERIOD} required.")
         return False, None
 
     current_candle = candle_data.iloc[-1]
@@ -98,120 +93,103 @@ def check_pattern(candle_data):
     low = current_candle['low']
     volume = current_candle['volume']
 
+    # Log the current candle's data
+    logging.info(
+        f"Evaluating Candle - Timestamp: {current_candle.name}, Open: {current_candle['open']}, High: {high}, "
+        f"Low: {low}, Close: {close}, Volume: {volume}"
+    )
+
     # Condition 1: Close in the top 30% of the range
-    close_position = (close - low) / (high - low)
+    close_position = (close - low) / (high - low) if (high - low) > 0 else Decimal('0')
     if close_position <= Decimal('0.7'):
+        logging.info(
+            f"Condition 1 failed: Close position {close_position:.4f} not in the top 30% of the range."
+        )
         return False, None
+    logging.info("Condition 1 passed: Close in the top 30% of the range.")
 
     # Condition 2: Volume greater than the average of the last LOOKBACK_PERIOD candles
     volume_avg = Decimal(candle_data['volume'][-LOOKBACK_PERIOD:].mean())
     if volume <= volume_avg:
+        logging.info(
+            f"Condition 2 failed: Volume {volume} not greater than average volume {volume_avg} of the last {LOOKBACK_PERIOD} candles."
+        )
         return False, None
+    logging.info("Condition 2 passed: Volume greater than average.")
 
     # Trend confirmation: check if the last TREND_CONFIRMATION_PERIOD candles have upward or stable closes
     for i in range(1, TREND_CONFIRMATION_PERIOD):
         if candle_data['close'].iloc[-i] < candle_data['close'].iloc[-(i + 1)]:
+            logging.info(
+                f"Condition 3 failed: Candle {i} close {candle_data['close'].iloc[-i]} "
+                f"is less than candle {i+1} close {candle_data['close'].iloc[-(i + 1)]}."
+            )
             return False, None
+    logging.info("Condition 3 passed: Trend confirmed with upward or stable closes.")
 
+    logging.info("All conditions met for entry.")
     return True, close
+
 
 # Function to log a trade entry (returns a trade_id)
 def log_trade_entry(entry_time, entry_price):
     try:
-        conn = db_connect()
-        cursor = conn.cursor()
+        conn, cursor = create_db_connection()
         insert_query = """
-            INSERT INTO trade_log_v2 (entry_time, entry_price)
+            INSERT INTO trade_log_v10 (entry_time, entry_price)
             VALUES (%s, %s)
             RETURNING id;
         """
         cursor.execute(insert_query, (entry_time, entry_price))
         conn.commit()
         trade_id = cursor.fetchone()[0]
-        conn.close()
+        conn.close()        
 
-        target_price = entry_price * (1 + GAIN_TARGET_PERCENT)
-        active_trades.append({'trade_id': trade_id, 'entry_time': entry_time, 'entry_price': entry_price, 'target_price': target_price})
         logging.info(f"Trade {trade_id} opened at {entry_time} with entry price {entry_price}")
-        logging.info(f"Active trades count: {len(active_trades)}")
-        logging.info(f"Active trades: {active_trades}")
+        
         return trade_id
     except Exception as e:
         logging.error("Error logging trade entry")
         logging.error(traceback.format_exc())
         raise
+    
 
-# Function to log a trade exit into the database
-def log_trade_exit(trade_id, exit_time, exit_price):
-    try:
-        # Find and remove the trade from active_trades
-        trade = next((t for t in active_trades if t['trade_id'] == trade_id), None)
-        if trade:
-            profit = exit_price - trade['entry_price']
-            conn = db_connect()
-            cursor = conn.cursor()
-            update_query = """
-                UPDATE trade_log_v2
-                SET exit_time = %s, exit_price = %s, profit = %s
-                WHERE id = %s;
-            """
-            cursor.execute(update_query, (exit_time, exit_price, profit, trade_id))
-            conn.commit()
-            conn.close()
-
-            # Append to completed_trades
-            completed_trades.append({'entry_time': trade['entry_time'], 'entry_price': trade['entry_price']})
-            # Remove the trade from active_trades
-            active_trades.remove(trade)
-            
-            logging.info(f"Trade ID {trade_id} closed at {exit_price} on {exit_time}, profit: {profit}")
-        else:
-            logging.warning(f"Trade ID {trade_id} not found in active_trades.")
-    except Exception as e:
-        logging.error("Error logging trade exit")
-        logging.error(traceback.format_exc())
-        raise
-
-
-# Strategy function
-def run_strategy():
+def run_strategy(trade_manager):
     # Get the 1-minute candles
     all_candles = get_all_candles()
-    
+
     if all_candles.empty:
         return
 
-    # Check each candle for the pattern
-    for i in range(LOOKBACK_PERIOD + TREND_CONFIRMATION_PERIOD, len(all_candles)):
-        pattern_data = all_candles.iloc[:i + 1]
-        pattern_detected, entry_price = check_pattern(pattern_data)
+    # Analyze only the latest candle (current live candle)
+    current_candle = all_candles.iloc[-1]  # Get the most recent candle
+    pattern_data = all_candles.iloc[-(LOOKBACK_PERIOD + TREND_CONFIRMATION_PERIOD):]  # Only the required lookback period
 
-        # Check if we can open a new trade
-        if pattern_detected and len(active_trades) < MAX_SIMULTANEOUS_TRADES:
-            entry_time = pattern_data.iloc[-1]['timestamp']
-            # Check for existing or completed trade with the same entry time and entry price
-            existing_or_completed_trade = any(
-                (trade['entry_time'] == entry_time and trade['entry_price'] == entry_price)
-                for trade in active_trades + completed_trades
-            )
+    # Log current candle details
+    logging.info(
+        f"Current Candle - Timestamp: {current_candle['timestamp']}, Open: {current_candle['open']}, "
+        f"High: {current_candle['high']}, Low: {current_candle['low']}, Close: {current_candle['close']}, Volume: {current_candle['volume']}"
+    )
 
-            # Log duplicate or completed trades only once
-            if existing_or_completed_trade:
-                if (entry_time, entry_price) not in logged_duplicates:
-                    logging.info(f"Duplicate or completed trade detected at {entry_time} with entry price {entry_price}. Skipping entry.")
-                    logged_duplicates.add((entry_time, entry_price))
-                continue
+    # Check if the pattern is detected for the current candle
+    pattern_detected, entry_price = check_pattern(pattern_data)
 
-            # Proceed to log a new trade entry if it's unique
-            trade_id = log_trade_entry(entry_time, entry_price)
-            print(f"Trade {trade_id} opened at {entry_time} with entry price {entry_price}")
+    # Entry Logic
+    if pattern_detected and len(trade_manager.active_trades) < MAX_SIMULTANEOUS_TRADES:
+        entry_time = current_candle['timestamp']
+        target_price = entry_price * (1 + GAIN_TARGET_PERCENT)
 
-        # Check if any active trades meet the exit condition
-        for trade in active_trades.copy():
-            if all_candles['high'].iloc[i] >= trade['target_price']:
-                log_trade_exit(trade['trade_id'], all_candles.iloc[i]['timestamp'], trade['target_price'])
-                print(f"Trade {trade['trade_id']} exited at {all_candles.iloc[i]['timestamp']} with price {trade['target_price']}")
+        # Use TradeManager to check for duplicates
+        if trade_manager.is_duplicate_trade(entry_time, entry_price):
+            return  # Skip duplicate entries
+
+        # Log a new trade entry
+        trade_id = log_trade_entry(entry_time, entry_price)
+        trade_manager.add_trade(trade_id, entry_time, entry_price, target_price)
+        logging.info(f"Trade {trade_id} added to TradeManager.")
+        logging.info(f"Trade {trade_id} opened at {entry_time} with entry price {entry_price}")
+        print(f"Trade {trade_id} opened at {entry_time} with entry price {entry_price}")
 
 
-if __name__ == "__main__":
-    run_strategy()
+#if __name__ == "__main__":
+#    run_strategy(trade_manager)

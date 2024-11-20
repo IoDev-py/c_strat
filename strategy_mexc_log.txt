@@ -2228,3 +2228,12 @@
 2024-11-20 20:34:00,423 - Current Candle - Timestamp: 2024-11-20 20:33:00+01:00, Open: 3044.28000000, High: 3044.75000000, Low: 3040.53000000, Close: 3042.01000000, Volume: 570.30976000
 2024-11-20 20:34:00,423 - Evaluating Candle - Timestamp: 567, Open: 3044.28000000, High: 3044.75000000, Low: 3040.53000000, Close: 3042.01000000, Volume: 570.30976000
 2024-11-20 20:34:00,423 - Condition 1 failed: Close position 0.3507 not in the top 30% of the range.
+2024-11-20 20:35:00,545 - Current Candle - Timestamp: 2024-11-20 20:34:00+01:00, Open: 3042.01000000, High: 3045.22000000, Low: 3041.00000000, Close: 3045.22000000, Volume: 1699.33068000
+2024-11-20 20:35:00,545 - Evaluating Candle - Timestamp: 568, Open: 3042.01000000, High: 3045.22000000, Low: 3041.00000000, Close: 3045.22000000, Volume: 1699.33068000
+2024-11-20 20:35:00,545 - Condition 1 passed: Close in the top 30% of the range.
+2024-11-20 20:35:00,546 - Condition 2 failed: Volume 1699.33068000 not greater than average volume 4708.8449730000002091401256620883941650390625 of the last 10 candles.
+2024-11-20 20:36:00,472 - Current Candle - Timestamp: 2024-11-20 20:35:00+01:00, Open: 3045.22000000, High: 3045.22000000, Low: 3042.91000000, Close: 3044.55000000, Volume: 4864.97315000
+2024-11-20 20:36:00,472 - Evaluating Candle - Timestamp: 569, Open: 3045.22000000, High: 3045.22000000, Low: 3042.91000000, Close: 3044.55000000, Volume: 4864.97315000
+2024-11-20 20:36:00,472 - Condition 1 passed: Close in the top 30% of the range.
+2024-11-20 20:36:00,473 - Condition 2 passed: Volume greater than average.
+2024-11-20 20:36:00,473 - Condition 3 failed: Candle 1 close 3044.55000000 is less than candle 2 close 3045.22000000.

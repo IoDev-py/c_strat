@@ -64,6 +64,7 @@ class TradeManager:
         try:
             response = requests.get(url, headers=headers)
             response.raise_for_status()
+            logging.info(f"Account info: {response.json()}")
             return response.json()
         except requests.exceptions.RequestException as e:
             logging.error("Error fetching account info")
@@ -82,7 +83,7 @@ class TradeManager:
             logging.error("Failed to fetch account balance.")
             return None
 
-        base_asset = trading_pair[:-4]  # Extract the base asset (e.g., "ETH" from "ETHUSDT")
+        base_asset = "USDC" #trading_pair[:-4]  # Extract the base asset (e.g., "ETH" from "ETHUSDT")
         for balance in account_info["balances"]:
             if balance["asset"] == base_asset:
                 available_balance = float(balance["free"])

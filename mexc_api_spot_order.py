@@ -16,7 +16,7 @@ def market_order(symbol, side, quantity):
     """Place a market order on MEXC."""
     endpoint = "/api/v3/order"
     timestamp = int(time.time() * 1000)
-    params = f"symbol={symbol}&side={side}&type=MARKET&quantity={quantity}&timestamp={timestamp}"
+    params = f"symbol={symbol}&side={side}&type=MARKET&quoteOrderQty={quantity}&timestamp={timestamp}"
     signature = generate_signature(SECRET_KEY, params)
     full_params = f"{params}&signature={signature}"
     url = BASE_URL + endpoint + "?" + full_params

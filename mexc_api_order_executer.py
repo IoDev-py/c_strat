@@ -35,14 +35,16 @@ def market_order(symbol, side, quantity):
     timestamp = int(time.time() * 1000)
 
     # Construct query string
-    params = f"symbol={symbol}&side={side}&type=MARKET&quantity={quantity}&timestamp={timestamp}"
-
+    params = f"symbol={symbol}&side={side}&type=MARKET&quoteOrderQty={quantity}&timestamp={timestamp}"
+    
     # Generate signature for the query string
     signature = generate_signature(SECRET_KEY, params)
 
     # Append signature to the query string
     full_params = f"{params}&signature={signature}"
     url = BASE_URL + endpoint + "?" + full_params
+
+    print(url)
 
     headers = {
         'Content-Type': 'application/json',
@@ -65,7 +67,7 @@ def market_sell(symbol, quantity):
 if __name__ == "__main__":
     # Replace with your trading pair and quantity
     trading_pair = "ETHUSDC"
-    quantity = 0.01  # Amount of ETH to buy/sell
+    quantity = 10  # Amount of ETH to buy/sell
 
     # Market Buy
     print("Executing Market Buy...")

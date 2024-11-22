@@ -37,7 +37,7 @@ def get_all_candles():
     conn, cursor = create_db_connection()
     query = """
         SELECT timestamp, open_price, high_price, low_price, close_price, volume
-        FROM price_data_v12
+        FROM price_data_v13
         ORDER BY timestamp;
     """
     cursor.execute(query)
@@ -136,7 +136,7 @@ def log_trade_entry(entry_time, entry_price):
     try:
         conn, cursor = create_db_connection()
         insert_query = """
-            INSERT INTO trade_log_v12 (entry_time, entry_price)
+            INSERT INTO trade_log_v13 (entry_time, entry_price)
             VALUES (%s, %s)
             RETURNING id;
         """

@@ -72,7 +72,7 @@ def on_message(ws, message):
             conn, cursor = create_db_connection()
             # Insert the data into PostgreSQL
             insert_query = sql.SQL("""
-                INSERT INTO price_data_v12 (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades, timestamp)
+                INSERT INTO price_data_v13 (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades, timestamp)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW());
             """)
             cursor.execute(insert_query, (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades))
@@ -120,7 +120,7 @@ def on_open(ws):
         "id": 1
     }
     ws.send(json.dumps(subscribe_message))
-    logging.info("Subscribed to ETHUSDT kline data with interval Min1")
+    logging.info("Subscribed to ETHUSDC kline data with interval Min1")
 
 
 # Start the WebSocket

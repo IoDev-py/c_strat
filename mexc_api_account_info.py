@@ -21,22 +21,19 @@ def generate_signature(secret_key, params):
     """
     return hmac.new(secret_key.encode(), params.encode(), hashlib.sha256).hexdigest()
 
-def market_order(symbol, side, quantity):
+def get_account_info():
     """
-    Place a market order on MEXC.
+    Get account information.
 
-    :param symbol: Trading pair (e.g., "ETHUSDC").
-    :param side: "BUY" or "SELL".
-    :param quantity: Amount of the base asset to trade.
+    :param timestamp
     :return: API response as JSON.
     """
-    endpoint = "/api/v3/order"
+    endpoint = "/api/v3/account"
 
     timestamp = int(time.time() * 1000)
 
     # Construct query string
-    params = f"symbol={symbol}&side={side}&type=MARKET&quantity={quantity}&timestamp={timestamp}"
-
+    params = f"timestamp={timestamp}"
     # Generate signature for the query string
     signature = generate_signature(SECRET_KEY, params)
 
@@ -50,29 +47,11 @@ def market_order(symbol, side, quantity):
     }
 
     # Make the POST request
-    response = requests.post(url, headers=headers)
+    response = requests.get(url, headers=headers)
     return response.json()
 
-def market_buy(symbol, quantity):
-    """Execute a market buy order."""
-    return market_order(symbol, "BUY", quantity)
-
-def market_sell(symbol, quantity):
-    """Execute a market sell order."""
-    return market_order(symbol, "SELL", quantity)
 
 # Example usage
 if __name__ == "__main__":
-    # Replace with your trading pair and quantity
-    trading_pair = "ETHUSDC"
-    quantity = 0.01  # Amount of ETH to buy/sell
-
-    # Market Buy
-    print("Executing Market Buy...")
-    buy_response = market_buy(trading_pair, quantity)
-    print("Buy Response:", buy_response)
-
-    # Market Sell
-    print("Executing Market Sell...")
-    sell_response = market_sell(trading_pair, quantity)
-    print("Sell Response:", sell_response)
+    account_info_response = get_account_info()
+    print("Account info:", account_info_response)

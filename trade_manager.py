@@ -1,6 +1,11 @@
 import logging
 import traceback
 import psycopg2
+import time
+import hmac
+import hashlib
+import requests
+import mexc_api_spot_order
 
 
 # Configure logging
@@ -29,26 +34,105 @@ class TradeManager:
         self.active_trades = []
         self.completed_trades = []
         self.logged_duplicates = set()  # Track logged duplicates to avoid repeated logging
-    
+        self.first_buy_quantity = None  # Track the first buy quantity
+        self.api_key = "mx0vglLaimWy9wDPUr"
+        self.secret_key = "273ca89504f6465cbbb3f1f2a0a0e934"
+        self.base_url = "https://api.mexc.com"
+        
+
+    def generate_signature(self, params):
+        """Generate HMAC SHA256 signature for MEXC API."""
+        return hmac.new(self.secret_key.encode(), params.encode(), hashlib.sha256).hexdigest()
+
+
+    def get_account_info(self):
+        """Fetch account information from MEXC."""
+        endpoint = "/api/v3/account"
+        timestamp = int(time.time() * 1000)
+
+        # Construct query string
+        params = f"timestamp={timestamp}"
+        signature = self.generate_signature(params)
+        full_params = f"{params}&signature={signature}"
+        url = self.base_url + endpoint + "?" + full_params
+
+        headers = {
+            'Content-Type': 'application/json',
+            "X-MEXC-APIKEY": self.api_key
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logging.error("Error fetching account info")
+            logging.error(e)
+            return None
+
+    def calculate_quantity(self, trading_pair):
+        """
+        Calculate the trading quantity based on 25% of the account balance for the given trading pair.
+
+        :param trading_pair: The trading pair (e.g., "ETHUSDT").
+        :return: Calculated quantity or None if the balance cannot be fetched.
+        """
+        account_info = self.get_account_info()
+        if not account_info or "balances" not in account_info:
+            logging.error("Failed to fetch account balance.")
+            return None
+
+        base_asset = trading_pair[:-4]  # Extract the base asset (e.g., "ETH" from "ETHUSDT")
+        for balance in account_info["balances"]:
+            if balance["asset"] == base_asset:
+                available_balance = float(balance["free"])
+                quantity = available_balance * 0.25  # Use 25% of the available balance
+                logging.info(f"Calculated quantity for {base_asset}: {quantity}")
+                return quantity
+
+        logging.error(f"Balance for {base_asset} not found in account info.")
+        return None
+
 
     def add_trade(self, trade_id, entry_time, entry_price, target_price):
+        """Add a new trade and execute a market buy order."""
+        if not self.first_buy_quantity:
+            self.first_buy_quantity = self.calculate_quantity("ETHUSDC")
+        quantity = self.first_buy_quantity or 0
         trade = {
             "trade_id": trade_id,
             "entry_time": entry_time,
             "entry_price": entry_price,
             "target_price": target_price,
+            "quantity": quantity,
         }
         self.active_trades.append(trade)
-        logging.info(f"Active trades count: {len(self.active_trades)}")
-        logging.info(f"Active trades: {self.active_trades}")
+        logging.info(f"Trade added: {trade}")
+
+        # Execute market buy order
+        response = mexc_api_spot_order.market_buy("ETHUSDC", quantity)
+        logging.info(f"Market Buy Executed: {response}")
 
 
     def remove_trade(self, trade_id):
-        for trade in self.active_trades:
-            if trade["trade_id"] == trade_id:
-                self.completed_trades.append(trade)
-                self.active_trades.remove(trade)
-                return trade
+        """Remove a trade and execute a market sell order."""
+        trade = next((t for t in self.active_trades if t["trade_id"] == trade_id), None)
+        if trade:
+            self.active_trades.remove(trade)
+            self.completed_trades.append(trade)
+
+            # Execute market sell order
+            response = mexc_api_spot_order.market_sell("ETHUSDC", trade["quantity"])
+            logging.info(f"Market Sell Executed: {response}")
+
+            # Reset the first buy quantity only if no other active trades remain
+            if not self.active_trades:  # Check if active trades list is empty
+                if trade["quantity"] == self.first_buy_quantity:
+                    self.first_buy_quantity = None
+                    logging.info("First buy quantity reset as there are no active trades.")
+            else:
+                logging.info("First buy quantity retained as other active trades exist.")
+            return trade
         return None
 
 
@@ -58,7 +142,7 @@ class TradeManager:
             # Find and remove the trade from active_trades
             conn, cursor = create_db_connection()  # Create a new connection for each operation
             update_query = """
-                UPDATE trade_log_v12
+                UPDATE trade_log_v13
                 SET exit_time = %s, exit_price = %s
                 WHERE id = %s;
             """

@@ -58,7 +58,7 @@ class TradeManager:
             # Find and remove the trade from active_trades
             conn, cursor = create_db_connection()  # Create a new connection for each operation
             update_query = """
-                UPDATE trade_log_v10
+                UPDATE trade_log_v12
                 SET exit_time = %s, exit_price = %s
                 WHERE id = %s;
             """

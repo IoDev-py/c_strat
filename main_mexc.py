@@ -72,7 +72,7 @@ def on_message(ws, message):
             conn, cursor = create_db_connection()
             # Insert the data into PostgreSQL
             insert_query = sql.SQL("""
-                INSERT INTO price_data_v10 (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades, timestamp)
+                INSERT INTO price_data_v12 (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades, timestamp)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW());
             """)
             cursor.execute(insert_query, (symbol, interval, open_price, close_price, high_price, low_price, volume, number_of_trades))
@@ -116,7 +116,7 @@ def on_open(ws):
     logging.info("WebSocket connected")
     subscribe_message = {
         "method": "SUBSCRIPTION",
-        "params": [f"spot@public.kline.v3.api@ETHUSDT@Min1"], # symbol='ETHUSDT', interval='Min1'
+        "params": [f"spot@public.kline.v3.api@ETHUSDC@Min1"], # symbol='ETHUSDC', interval='Min1'
         "id": 1
     }
     ws.send(json.dumps(subscribe_message))

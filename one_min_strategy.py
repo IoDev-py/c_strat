@@ -12,7 +12,7 @@ logging.basicConfig(filename='strategy_mexc_log.txt', level=logging.INFO, format
 # Parameters for the strategy
 LOOKBACK_PERIOD = 10  # Number of candles to look back for volume average
 TREND_CONFIRMATION_PERIOD = 3  # Number of candles for trend confirmation
-GAIN_TARGET_PERCENT = Decimal('0.0001')  # 0.01% gain
+GAIN_TARGET_PERCENT = Decimal('0.0005')  # 0.05% gain
 MAX_SIMULTANEOUS_TRADES = 4  # Maximum number of open trades at the same time
 
 # Database connection function
@@ -37,7 +37,7 @@ def get_all_candles():
     conn, cursor = create_db_connection()
     query = """
         SELECT timestamp, open_price, high_price, low_price, close_price, volume
-        FROM price_data_v10
+        FROM price_data_v12
         ORDER BY timestamp;
     """
     cursor.execute(query)
@@ -136,7 +136,7 @@ def log_trade_entry(entry_time, entry_price):
     try:
         conn, cursor = create_db_connection()
         insert_query = """
-            INSERT INTO trade_log_v10 (entry_time, entry_price)
+            INSERT INTO trade_log_v12 (entry_time, entry_price)
             VALUES (%s, %s)
             RETURNING id;
         """
@@ -189,7 +189,3 @@ def run_strategy(trade_manager):
         logging.info(f"Trade {trade_id} added to TradeManager.")
         logging.info(f"Trade {trade_id} opened at {entry_time} with entry price {entry_price}")
         print(f"Trade {trade_id} opened at {entry_time} with entry price {entry_price}")
-
-
-#if __name__ == "__main__":
-#    run_strategy(trade_manager)
